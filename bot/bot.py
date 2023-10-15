@@ -1,10 +1,10 @@
 from aiogram import Bot, Dispatcher, types
 from aiogram import executor
 from aiogram.types import CallbackQuery
-from keyboards import start_kb, vm_add_kb, sub_lst_kb
+from keyboards import start_kb, vm_add_kb, sub_lst_kb, vm_info_kb
 from settings.config import Config
 from status_base import createdb, page, update_lst_page, get_user_status, update_user_status, add_user
-from functions import sub_lst_text
+from functions import sub_lst_text, vm_info_func
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -46,18 +46,24 @@ async def mail(message: types.Message):
     await bot.send_message(chat_id=message.chat.id, text='helloworld!', reply_markup=start_kb())
 
 @dp.message_handler(content_types=types.ContentTypes.TEXT)
-async def mail(message: types.Message):
+async def action(message: types.Message):
     if message.text == "Добавить ВМ":
         await bot.send_message(chat_id=message.chat.id, text='vm_add_kb!', reply_markup=vm_add_kb())
     elif message.text == "Подписки ВМ":
-        print('next')
         update_lst_page(message.chat.id, 1)
         await bot.send_message(chat_id=message.chat.id, text=sub_lst_text(ip_addresses, message.chat.id),
                                reply_markup=sub_lst_kb(ip_addresses,
                                                        message.chat.id))
+    elif message.text == "Список ВМ":
+        update_lst_page(message.chat.id, 1)
+        # ИСПОЛЬЗОВАТЬ ДРУГОЙ СПИСОК ПОСЛЕ СОЗДАНИЯ БД
+        await bot.send_message(chat_id=message.chat.id, text=sub_lst_text(ip_addresses, message.chat.id),
+                               reply_markup=sub_lst_kb(ip_addresses,
+                                                       message.chat.id))
+
 
 @dp.callback_query_handler(lambda c: c.data in ['next'])
-async def process_callback_media(callback_query: types.CallbackQuery):
+async def next_page(callback_query: types.CallbackQuery):
     user_id = callback_query.message.chat.id
     update_lst_page(user_id, page(user_id) + 1)
     await bot.edit_message_text(chat_id=user_id, message_id=callback_query.message.message_id,
@@ -66,13 +72,33 @@ async def process_callback_media(callback_query: types.CallbackQuery):
                                         reply_markup=sub_lst_kb(ip_addresses, user_id))
 
 @dp.callback_query_handler(lambda c: c.data in ['prev'])
-async def process_callback_media(callback_query: types.CallbackQuery):
+async def prev_page(callback_query: types.CallbackQuery):
     user_id = callback_query.message.chat.id
     update_lst_page(user_id, page(user_id) - 1)
     await bot.edit_message_text(chat_id=user_id, message_id=callback_query.message.message_id,
                                 text=sub_lst_text(ip_addresses, user_id))
     await bot.edit_message_reply_markup(chat_id=user_id, message_id=callback_query.message.message_id,
                                         reply_markup=sub_lst_kb(ip_addresses, user_id))
+
+
+# ИСПОЛЬЗОВАТЬ ДРУГОЙ СПИСОК ПОСЛЕ СОЗДАНИЯ БД
+@dp.callback_query_handler(lambda c: c.data in ['sub_unsub'])
+async def sub_unsub(callback_query: types.CallbackQuery):
+    user_id = callback_query.message.chat.id
+    await bot.send_message(text="ВМ инфо", chat_id=user_id)
+
+
+# ИСПОЛЬЗОВАТЬ ДРУГОЙ СПИСОК ПОСЛЕ СОЗДАНИЯ БД
+@dp.callback_query_handler(lambda c: c.data in ['notif'])
+async def notif(callback_query: types.CallbackQuery):
+    user_id = callback_query.message.chat.id
+    await bot.send_message(text="ВМ инфо", chat_id=user_id)
+
+@dp.callback_query_handler(lambda c: c.data.startswith('vm_'))
+async def vm_info(callback_query: CallbackQuery):
+    user_id = callback_query.message.chat.id
+    await bot.send_message(parse_mode=types.ParseMode.HTML, text=vm_info_func(), chat_id=user_id,
+        reply_markup=vm_info_kb())
 
 
 if __name__ == '__main__':
