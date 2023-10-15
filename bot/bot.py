@@ -4,6 +4,10 @@ from aiogram.types import CallbackQuery
 from keyboards import start_kb, vm_add_kb, sub_lst_kb
 from settings.config import Config
 from status_base import createdb, page, update_lst_page, get_user_status, update_user_status, add_user
+from functions import sub_lst_text
+import logging
+
+logging.basicConfig(level=logging.INFO)
 config = Config()
 
 bot = Bot(config.token)
@@ -35,61 +39,41 @@ ip_addresses = [
     "::1"
 ]
 
+
 @dp.message_handler(commands=['start', 'help'])
 async def mail(message: types.Message):
     add_user(user_id=message.chat.id, user_status="start")
-    await bot.send_message(chat_id=message.chat.id,text='helloworld!', reply_markup=start_kb())
-
+    await bot.send_message(chat_id=message.chat.id, text='helloworld!', reply_markup=start_kb())
 
 @dp.message_handler(content_types=types.ContentTypes.TEXT)
 async def mail(message: types.Message):
     if message.text == "Добавить ВМ":
         await bot.send_message(chat_id=message.chat.id, text='vm_add_kb!', reply_markup=vm_add_kb())
     elif message.text == "Подписки ВМ":
-        await bot.send_message(chat_id=message.chat.id, text="ZOV", reply_markup=sub_lst_kb(ip_addresses,
-                                                                                                   message.chat.id))
+        print('next')
+        update_lst_page(message.chat.id, 1)
+        await bot.send_message(chat_id=message.chat.id, text=sub_lst_text(ip_addresses, message.chat.id),
+                               reply_markup=sub_lst_kb(ip_addresses,
+                                                       message.chat.id))
 
-@dp.callback_query_handler(text="next_page")
-async def next_page_handler(callback_query: CallbackQuery):
-    await callback_query.answer()
-    user_id = callback_query.from_user.id
-
-    # Увеличиваем номер текущей страницы на 1
-    update_lst_page(user_id, int(page(user_id)) + 1)
-
-    # Обновляем сообщение с новой клавиатурой
-    await bot.edit_message_reply_markup(callback_query.from_user.id, callback_query.message.message_id,
+@dp.callback_query_handler(lambda c: c.data in ['next'])
+async def process_callback_media(callback_query: types.CallbackQuery):
+    user_id = callback_query.message.chat.id
+    update_lst_page(user_id, page(user_id) + 1)
+    await bot.edit_message_text(chat_id=user_id, message_id=callback_query.message.message_id,
+                                text=sub_lst_text(ip_addresses, user_id))
+    await bot.edit_message_reply_markup(chat_id=user_id, message_id=callback_query.message.message_id,
                                         reply_markup=sub_lst_kb(ip_addresses, user_id))
 
-# Обработчик для кнопки "Назад"
-@dp.callback_query_handler(text="prev_page")
-async def prev_page_handler(callback_query: CallbackQuery):
-    await callback_query.answer()
-    user_id = callback_query.from_user.id
-
-    # Уменьшаем номер текущей страницы на 1
-    update_lst_page(user_id, int(page(user_id)) - 1)
-
-    # Обновляем сообщение с новой клавиатурой
-    await bot.edit_message_reply_markup(callback_query.from_user.id, callback_query.message.message_id,
+@dp.callback_query_handler(lambda c: c.data in ['prev'])
+async def process_callback_media(callback_query: types.CallbackQuery):
+    user_id = callback_query.message.chat.id
+    update_lst_page(user_id, page(user_id) - 1)
+    await bot.edit_message_text(chat_id=user_id, message_id=callback_query.message.message_id,
+                                text=sub_lst_text(ip_addresses, user_id))
+    await bot.edit_message_reply_markup(chat_id=user_id, message_id=callback_query.message.message_id,
                                         reply_markup=sub_lst_kb(ip_addresses, user_id))
-
-# @dp.message_handler(commands=['start', 'help'])
-# async def mail(message: types.Message):
-#     await bot.send_message(chat_id=message.chat.id, text='helloworld!', reply_markup=start_keyboard())
-#
-#
-# @dp.message_handler(commands=['start', 'help'])
-# async def mail(message: types.Message):
-#     await bot.send_message(chat_id=message.chat.id, text='helloworld!', reply_markup=start_keyboard())
-#
-#
-# @dp.message_handler(commands=['start', 'help'])
-# async def mail(message: types.Message):
-#     await bot.send_message(chat_id=message.chat.id, text='helloworld!', reply_markup=start_keyboard())
-#
 
 
 if __name__ == '__main__':
-    executor.start_polling(dp)
-
+    executor.start_polling(dp, skip_updates=True)

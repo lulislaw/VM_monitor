@@ -24,7 +24,7 @@ def page(user_id):
 def update_lst_page(user_id, new_lst_page):
     db = sqlite3.connect('database.db')
     c = db.cursor()
-    c.execute('UPDATE users SET user_status = ? WHERE user_id = ?', (new_lst_page, user_id))
+    c.execute('UPDATE users SET lst_page = ? WHERE user_id = ?', (new_lst_page, user_id))
     db.commit()
     db.close()
 
