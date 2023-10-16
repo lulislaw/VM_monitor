@@ -1,6 +1,5 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup
-from status_base import page, update_lst_page
-
+from db_main import get_user_page
 
 
 
@@ -13,19 +12,22 @@ def start_kb():
     return ReplyKeyboardMarkup(row_width=3).add(pool_vm_button, subs_vm_button, add_vm_button)
 
 
+
+
 def vm_add_kb():
-    ip_bt = InlineKeyboardButton(text='ip_bt', callback_data="1")
-    port_bt = InlineKeyboardButton(text='port_bt', callback_data="2")
-    username_bt = InlineKeyboardButton(text='username_bt', callback_data="3")
-    password_bt = InlineKeyboardButton(text='password_bt', callback_data="4")
-    accept_vm_add_bt = InlineKeyboardButton(text='accept_vm_add_bt', callback_data="5")
+    ip_bt = InlineKeyboardButton(text='Изменить ip', callback_data="edit_ip")
+    port_bt = InlineKeyboardButton(text='Изменить port', callback_data="edit_port")
+    username_bt = InlineKeyboardButton(text='Изменить учетную запись', callback_data="edit_username")
+    password_bt = InlineKeyboardButton(text='Изменить пароль', callback_data="edit_password")
+    accept_vm_add_bt = InlineKeyboardButton(text='Подтвердить', callback_data="edit_accept")
 
     return InlineKeyboardMarkup(row_width=2).add(ip_bt, port_bt, username_bt, password_bt, accept_vm_add_bt)
 
 
 def sub_lst_kb(lst: list, user_id):
     page_size = 8
-    current_page = page(user_id) - 1
+
+    current_page = get_user_page(user_id) - 1
     markup = InlineKeyboardMarkup(row_width=2)
     start_index = current_page * page_size
     end_index = (current_page + 1) * page_size
@@ -42,8 +44,9 @@ def sub_lst_kb(lst: list, user_id):
     return markup
 
 
-def vm_info_kb():
-    vm_sub_unsub = InlineKeyboardButton(text='Подписаться', callback_data="sub_unsub")
+def vm_info_kb(text_sub_bt):
+    vm_sub_unsub = InlineKeyboardButton(text=text_sub_bt, callback_data="sub_unsub")
     vm_notif = InlineKeyboardButton(text='Уведомления', callback_data="notif")
+    vm_edit_data = InlineKeyboardButton(text='Изменить', callback_data="edit_vm")
 
-    return InlineKeyboardMarkup(row_width=2).add(vm_sub_unsub, vm_notif)
+    return InlineKeyboardMarkup(row_width=2).add(vm_sub_unsub, vm_notif, vm_edit_data)

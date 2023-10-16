@@ -1,10 +1,12 @@
-from status_base import page
 
-vm = ('192.168.0.100', '22', 'SERV2', 'admin', 'abc123')
+from db_main import get_user_page,get_server_record_by_ip
+
 
 def sub_lst_text(lst: list, user_id):
+    if not lst:
+        return "Вы не подписаны ни на одну виртуальную машину."
     page_size = 8
-    current_page = page(user_id) - 1
+    current_page = get_user_page(user_id) - 1
     start_index = current_page * page_size
     end_index = (current_page + 1) * page_size
     current_lst = lst[start_index:end_index]
@@ -13,5 +15,6 @@ def sub_lst_text(lst: list, user_id):
         finish_text = f'{finish_text}{(i + 1)+current_page*page_size}. {item}\n'
     return finish_text
 
-def vm_info_func(vm = vm):
-    return f"ip:{vm[0]}\nport:{vm[1]}\nhostname:{vm[2]}\nname:{vm[3]}\npassword:<span class='tg-spoiler'>{vm[4]}</span>"
+def vm_info_func(ip_address):
+    vm = get_server_record_by_ip(ip_address)
+    return f"ip:{vm[1]}\nport:{vm[2]}\nusername:{vm[4]}\npassword:<span class='tg-spoiler'>{vm[5]}</span>"
