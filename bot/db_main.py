@@ -25,7 +25,7 @@ notification_table = Table(
     Column("noti_text", String),
     Column("data_path", String),
     Column("date", String),
-    Column("id_server", ForeignKey("server.id"), nullable=False)
+    Column("ip_server", ForeignKey("server.id"), nullable=False)
 )
 
 # ////
@@ -39,7 +39,8 @@ server_table = Table(
     Column("name", String),
     Column("username", String),
     Column("password", String),
-    Column("status", String)
+    Column("status", String),
+    Column("remote_path", String)
 )
 
 # ////
@@ -54,6 +55,41 @@ subscription_table = Table(
 )
 
 
+def get_all_notify(ip_address):
+    with engine.connect() as conn:
+        stmt = notification_table.select().where(
+            (notification_table.c.ip_server == ip_address)
+        )
+        result = conn.execute(stmt)
+        rows = result.fetchall()
+        lst = []
+        for row in rows:
+            lst.append((row.id,row.noti_text,row.data_path,row.date,row.ip_server))
+        print(lst)
+        return lst
+
+def get_notif_by_id(id):
+    with engine.connect() as conn:
+        stmt = notification_table.select().where(
+            (notification_table.c.id == id)
+        )
+        result = conn.execute(stmt)
+        row = result.fetchone()
+        return row
+
+def add_notif(noti_text, data_path, date, ip_server):
+    with engine.connect() as conn:
+        stmt = insert(notification_table).values(
+            noti_text=noti_text,
+            data_path=data_path,
+            date=date,
+            ip_server=ip_server
+        )
+        result = conn.execute(stmt)
+        conn.commit()
+    return result
+
+
 def get_subscribed_users(ip_address):
     with engine.connect() as conn:
         stmt = subscription_table.select().where(
@@ -63,6 +99,8 @@ def get_subscribed_users(ip_address):
         result = conn.execute(stmt)
         id_users = [row[0] for row in result.fetchall()]
         return id_users
+
+
 def get_subscribed_servers(id_user):
     with engine.connect() as conn:
         stmt = subscription_table.select().where(
@@ -73,6 +111,13 @@ def get_subscribed_servers(id_user):
         id_servers = [row[0] for row in result.fetchall()]
         return id_servers
 
+
+def get_ip_addresses_with_status(status='success'):
+    with engine.connect() as conn:
+        stmt = select(server_table.c.ip_address).where(server_table.c.status == status)
+        result = conn.execute(stmt)
+        ip_addresses = [row[0] for row in result.fetchall()]
+        return ip_addresses
 
 
 def get_all_ip_addresses():
@@ -96,7 +141,11 @@ def set_port_server(ip_address, new_port):
         stmt = server_table.update().where(server_table.c.ip_address == ip_address).values(port=new_port)
         result = conn.execute(stmt)
         conn.commit()
-
+def set_remote_path_server(ip_address, remote_path):
+    with engine.connect() as conn:
+        stmt = server_table.update().where(server_table.c.ip_address == ip_address).values(remote_path=remote_path)
+        result = conn.execute(stmt)
+        conn.commit()
 
 def set_username_server(ip_address, username):
     with engine.connect() as conn:
@@ -134,6 +183,7 @@ def get_server_record_by_ip(ip_address):
         print(record)
         return record
 
+
 def get_subscription_status(id_server, id_user):
     with engine.connect() as conn:
         stmt = subscription_table.select().where(
@@ -147,6 +197,7 @@ def get_subscription_status(id_server, id_user):
             return new_status_text
         else:
             return "Подписаться"
+
 
 def subscription(id_server, id_user):
     with engine.connect() as conn:
@@ -175,7 +226,6 @@ def subscription(id_server, id_user):
             conn.execute(stmt_insert)
             conn.commit()
             return "Отписаться"
-
 
 
 def add_user_account(id_tg, name, status, lst_page):
@@ -207,10 +257,10 @@ def create_base(action):  # 'drop' чтобы удалить, 'create' чтоб�
         metadata_obj.drop_all(engine)
 
 
-def set_server_status(server_name, status):
+def set_server_status(ip, status):
     stmt = (
         update(server_table)
-        .where(server_table.c.name == server_name)
+        .where(server_table.c.ip_address == ip)
         .values(status=status)
     )
     with engine.connect() as conn:
@@ -248,14 +298,12 @@ def get_tables_keys(table):
     return
 
 
-def get_server_status(server_name):
-    stmt = select(cast(server_table.c.status, String)).where(server_table.c.name == server_name)
+def get_server_status(ip):
+    stmt = select(cast(server_table.c.status, String)).where(server_table.c.ip_address == ip)
     with engine.connect() as conn:
         result = conn.execute(stmt)
         for row in result:
-            print(row[0])
-
-    return
+            return (row[0])
 
 
 def get_user_status(tg_id):
