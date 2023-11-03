@@ -14,6 +14,7 @@ user_table = Table(
     Column("status", String),
     Column("lst_page", Integer),
     Column("selected_ip", String),
+    Column("role", String)
 )
 
 # ////
@@ -36,11 +37,13 @@ server_table = Table(
     Column("id", Integer, primary_key=True),
     Column("ip_address", String, unique=True),
     Column("port", String),
-    Column("name", String),
     Column("username", String),
     Column("password", String),
     Column("status", String),
-    Column("remote_path", String)
+    Column("hostname", String)
+    # Column("remote_pathes", String),
+    #
+    # Column("remote_process", String)
 )
 
 # ////
@@ -51,8 +54,134 @@ subscription_table = Table(
     Column("id", Integer, primary_key=True),
     Column("id_server", ForeignKey("server.id"), nullable=False),
     Column("id_user", ForeignKey("user_account.id"), nullable=False),
+    Column("process_file", String),
     Column("status_sub", String)
+    #
 )
+
+server_process_files_table = Table(
+    "server_processes",
+    metadata_obj,
+    Column("id", Integer, primary_key=True),
+    Column("ip_address", String),
+    Column("process_file", String),
+    Column("type", String),
+    Column("status", String),
+    Column("name", String)
+)
+
+
+def set_process_status(ip_address, process_file, status):
+    stmt = (
+        update(server_process_files_table)
+        .where(
+            (server_process_files_table.c.ip_address == ip_address) &
+            (server_process_files_table.c.process_file == process_file)
+        )
+        .values(status=status)
+    )
+    with engine.connect() as conn:
+        result = conn.execute(stmt)
+        conn.commit()
+    return result
+
+
+def add_server_process(ip_address, process):
+    if "\\" in process or "/" in process:
+        type = 'file'
+    else:
+        type = 'process'
+    with engine.connect() as conn:
+        stmt = insert(server_process_files_table).values(
+            ip_address=ip_address,
+            process_file=process,
+            type=type,
+            status="None"
+        )
+        result = conn.execute(stmt)
+        conn.commit()
+    return result
+
+
+def get_process(id, ip_address=None, process_file=None):
+    with engine.connect() as conn:
+        stmt = server_process_files_table.select().where(server_process_files_table.c.id == id)
+        if ip_address != None:
+            stmt = server_process_files_table.select().where(
+                (server_process_files_table.c.ip_address == ip_address) &
+                (server_process_files_table.c.process_file == process_file))
+        result = conn.execute(stmt)
+        row = result.fetchone()
+        return row
+
+
+def get_server_processes_by_ip(ip_address):
+    with engine.connect() as conn:
+        stmt = server_process_files_table.select().where(server_process_files_table.c.ip_address == ip_address)
+        result = conn.execute(stmt)
+        rows = result.fetchall()
+        lst = []
+        for row in rows:
+            lst.append((row.id, row.ip_address, row.process_file, row.type, row.status, row.name))
+        return lst
+
+
+def subscription(id_server, id_user, process_file=None):
+    with engine.connect() as conn:
+        stmt_check = subscription_table.select().where(
+            (subscription_table.c.id_server == id_server) &
+            (subscription_table.c.id_user == id_user) &
+            (subscription_table.c.process_file == process_file)
+        )
+        existing_record = conn.execute(stmt_check).fetchone()
+        if existing_record is not None:
+            current_status = existing_record.status_sub
+            new_status = "sub" if current_status == "unsub" else "unsub"
+            stmt_update = subscription_table.update().where(
+                (subscription_table.c.id_server == id_server) &
+                (subscription_table.c.id_user == id_user) &
+                (subscription_table.c.process_file == process_file)
+            ).values(status_sub=new_status)
+            conn.execute(stmt_update)
+            conn.commit()
+            new_status_text = "Отписаться" if new_status == "sub" else "Подписаться"
+            return new_status_text
+        else:
+            stmt_insert = subscription_table.insert().values(
+                id_server=id_server,
+                id_user=id_user,
+                status_sub="sub",
+                process_file=process_file
+            )
+            conn.execute(stmt_insert)
+            conn.commit()
+            return "Отписаться"
+
+
+def get_subscribtion_table_by_ip(ip_address):
+    with engine.connect() as conn:
+        stmt = subscription_table.select().where(
+            (subscription_table.c.id_server == ip_address) &
+            (subscription_table.c.status_sub == "sub")
+        )
+        result = conn.execute(stmt)
+        rows = result.fetchall()
+        lst = []
+        for row in rows:
+            lst.append((row.id, row.id_server, row.id_user, row.process_file, row.status_sub))
+        return lst
+
+
+def get_subscribed_servers(id_user):
+    with engine.connect() as conn:
+        stmt = subscription_table.select().where(
+            (subscription_table.c.id_user == id_user) &
+            (subscription_table.c.status_sub == "sub") &
+            (subscription_table.c.process_file == None)
+        ).with_only_columns(subscription_table.c.id_server)
+        result = conn.execute(stmt)
+        id_servers = [row[0] for row in result.fetchall()]
+        return id_servers
 
 
 def get_all_notify(ip_address):
@@ -64,9 +193,10 @@ def get_all_notify(ip_address):
         rows = result.fetchall()
         lst = []
         for row in rows:
-            lst.append((row.id,row.noti_text,row.data_path,row.date,row.ip_server))
+            lst.append((row.id, row.noti_text, row.data_path, row.date, row.ip_server))
         print(lst)
         return lst
+
 
 def get_notif_by_id(id):
     with engine.connect() as conn:
@@ -76,6 +206,7 @@ def get_notif_by_id(id):
         result = conn.execute(stmt)
         row = result.fetchone()
         return row
+
 
 def add_notif(noti_text, data_path, date, ip_server):
     with engine.connect() as conn:
@@ -88,28 +219,6 @@ def add_notif(noti_text, data_path, date, ip_server):
         result = conn.execute(stmt)
         conn.commit()
     return result
-
-
-def get_subscribed_users(ip_address):
-    with engine.connect() as conn:
-        stmt = subscription_table.select().where(
-            (subscription_table.c.id_server == ip_address) &
-            (subscription_table.c.status_sub == "sub")
-        ).with_only_columns(subscription_table.c.id_user)
-        result = conn.execute(stmt)
-        id_users = [row[0] for row in result.fetchall()]
-        return id_users
-
-
-def get_subscribed_servers(id_user):
-    with engine.connect() as conn:
-        stmt = subscription_table.select().where(
-            (subscription_table.c.id_user == id_user) &
-            (subscription_table.c.status_sub == "sub")
-        ).with_only_columns(subscription_table.c.id_server)
-        result = conn.execute(stmt)
-        id_servers = [row[0] for row in result.fetchall()]
-        return id_servers
 
 
 def get_ip_addresses_with_status(status='success'):
@@ -141,11 +250,14 @@ def set_port_server(ip_address, new_port):
         stmt = server_table.update().where(server_table.c.ip_address == ip_address).values(port=new_port)
         result = conn.execute(stmt)
         conn.commit()
-def set_remote_path_server(ip_address, remote_path):
+
+
+def set_hostname_server(ip_address, hostname):
     with engine.connect() as conn:
-        stmt = server_table.update().where(server_table.c.ip_address == ip_address).values(remote_path=remote_path)
+        stmt = server_table.update().where(server_table.c.ip_address == ip_address).values(hostname=hostname)
         result = conn.execute(stmt)
         conn.commit()
+
 
 def set_username_server(ip_address, username):
     with engine.connect() as conn:
@@ -184,11 +296,12 @@ def get_server_record_by_ip(ip_address):
         return record
 
 
-def get_subscription_status(id_server, id_user):
+def get_subscription_status(id_server, id_user, process_file=None):
     with engine.connect() as conn:
         stmt = subscription_table.select().where(
             (subscription_table.c.id_server == id_server) &
-            (subscription_table.c.id_user == id_user)
+            (subscription_table.c.id_user == id_user) &
+            (subscription_table.c.process_file == process_file)
         )
         result = conn.execute(stmt)
         record = result.fetchone()
@@ -199,35 +312,6 @@ def get_subscription_status(id_server, id_user):
             return "Подписаться"
 
 
-def subscription(id_server, id_user):
-    with engine.connect() as conn:
-        stmt_check = subscription_table.select().where(
-            (subscription_table.c.id_server == id_server) &
-            (subscription_table.c.id_user == id_user)
-        )
-        existing_record = conn.execute(stmt_check).fetchone()
-        if existing_record is not None:
-            current_status = existing_record.status_sub
-            new_status = "sub" if current_status == "unsub" else "unsub"
-            stmt_update = subscription_table.update().where(
-                (subscription_table.c.id_server == id_server) &
-                (subscription_table.c.id_user == id_user)
-            ).values(status_sub=new_status)
-            conn.execute(stmt_update)
-            conn.commit()
-            new_status_text = "Отписаться" if new_status == "sub" else "Подписаться"
-            return new_status_text
-        else:
-            stmt_insert = subscription_table.insert().values(
-                id_server=id_server,
-                id_user=id_user,
-                status_sub="sub"
-            )
-            conn.execute(stmt_insert)
-            conn.commit()
-            return "Отписаться"
-
-
 def add_user_account(id_tg, name, status, lst_page):
     with engine.connect() as conn:
         stmt = insert(user_table).values(
@@ -235,7 +319,8 @@ def add_user_account(id_tg, name, status, lst_page):
             name=name,
             status=status,
             lst_page=lst_page,
-            selected_ip=""
+            selected_ip="",
+            role="user"
         ).on_conflict_do_update(
             index_elements=[user_table.c.id],
             set_={
@@ -293,17 +378,21 @@ def set_user_page(tg_id, page):
     return result
 
 
+def set_user_role(tg_id, role):
+    stmt = (
+        update(user_table)
+        .where(user_table.c.id == tg_id)
+        .values(role=role)
+    )
+    with engine.connect() as conn:
+        result = conn.execute(stmt)
+        conn.commit()
+    return result
+
+
 def get_tables_keys(table):
     print(table.c.keys())
     return
-
-
-def get_server_status(ip):
-    stmt = select(cast(server_table.c.status, String)).where(server_table.c.ip_address == ip)
-    with engine.connect() as conn:
-        result = conn.execute(stmt)
-        for row in result:
-            return (row[0])
 
 
 def get_user_status(tg_id):
@@ -357,6 +446,15 @@ def get_user_page(tg_id):
         if result:
             for row in result:
                 return int(row[0])
+
+
+def get_user_role(tg_id):
+    stmt = select(cast(user_table.c.role, String)).where(user_table.c.id == tg_id)
+    with engine.connect() as conn:
+        result = conn.execute(stmt)
+        if result:
+            for row in result:
+                return (row[0])
 
 
 def get_sub_status(server_id, user_id):

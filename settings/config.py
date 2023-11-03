@@ -7,3 +7,4 @@ load_dotenv(dotenv_file)
 class Config(object):
     def __init__(self):
         self.token = os.getenv('tgtoken')
+        self.admin_pass = os.getenv('password')
