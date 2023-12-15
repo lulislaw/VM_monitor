@@ -2,14 +2,15 @@ from aiogram import Bot, Dispatcher, types
 from aiogram import executor
 from aiogram.types import ChatActions
 from aiogram.types import CallbackQuery
-from keyboards import start_kb, vm_add_kb, sub_lst_kb, vm_info_kb
+from keyboards import start_kb, vm_add_kb, sub_lst_kb, vm_info_kb, process_info_keyboard
 from settings.config import Config
-from functions import sub_lst_text, vm_info_func
+from functions import sub_lst_text, vm_info_func, process_info
 from db_main import create_base, add_user_account, set_user_page, get_user_page, get_user_status, set_user_status, \
     create_server_first_time, get_user_ip, set_user_ip, set_port_server, set_password_server, set_username_server, \
     get_all_ip_addresses, subscription, get_subscription_status, get_subscribed_servers, get_subscribtion_table_by_ip, \
     add_notif, get_all_notify, get_notif_by_id, set_user_role, get_user_role, \
-    get_server_record_by_ip, get_server_processes_by_ip, add_server_process
+    get_server_record_by_ip, get_server_processes_by_ip, add_server_process, delete_process, set_timer_process, \
+    get_process
 import logging
 from datetime import datetime
 
@@ -42,13 +43,14 @@ async def admin(message: types.Message):
     password = message.text.split(' ')[1]
     if password == config.admin_pass:
         set_user_role(tg_id=message.chat.id, role='admin')
-        await bot.send_message(chat_id=message.chat.id, text='Вы получили права администратора\n /admin user чтобы убрать права администратора',
+        await bot.send_message(chat_id=message.chat.id,
+                               text='Вы получили права администратора\n /admin user чтобы убрать права администратора',
                                reply_markup=start_kb(message.chat.id))
         await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
     elif password == 'user':
         set_user_role(tg_id=message.chat.id, role='user')
-        await bot.send_message(chat_id=message.chat.id, text='Вы убрали права администратора',reply_markup=start_kb(message.chat.id))
-
+        await bot.send_message(chat_id=message.chat.id, text='Вы убрали права администратора',
+                               reply_markup=start_kb(message.chat.id))
 
 
 @dp.message_handler(content_types=types.ContentTypes.TEXT)
@@ -76,10 +78,10 @@ async def action(message: types.Message):
         ip_address = message.text
         try:
             set_user_ip(message.chat.id, ip_address)
-            sub = get_subscription_status(ip_address,user_id)
+            sub = get_subscription_status(ip_address, user_id)
             await bot.send_message(parse_mode=types.ParseMode.HTML, chat_id=message.chat.id,
                                    text=vm_info_func(user_id, ip_address),
-                                   reply_markup=vm_info_kb(user_id,sub))
+                                   reply_markup=vm_info_kb(user_id, sub))
         except Exception as e:
             await bot.send_message(chat_id=user_id, text='Виртуальной машины с таким ip нет!')
     elif get_user_role(user_id) == 'admin':
@@ -119,7 +121,9 @@ async def action(message: types.Message):
             set_user_status(message.chat.id, 'start')
             ip_address = get_user_ip(message.chat.id)
             chat_id_lst = [array[2] for array in get_subscribtion_table_by_ip(ip_address) if array]
-            await send_notify(chat_id_lst=chat_id_lst, ip_address=ip_address, text=message.text)
+            unique_array = list(set(chat_id_lst))
+            text_notif = f'Уведомление для ВМ({ip_address})\n{message.text}\n\n@{message.from_user.username}'
+            await send_notify(chat_id_lst=unique_array, ip_address=ip_address, text=text_notif)
 
         elif get_user_status(message.chat.id) == 'cmd_command':
             if message.text == 'end':
@@ -141,6 +145,30 @@ async def action(message: types.Message):
                                                      ip_address=ip_address),
                                    reply_markup=sub_lst_kb(get_server_processes_by_ip(ip_address), user_id,
                                                            'process_file'))
+        elif get_user_status(message.chat.id) == 'set_timer':
+            set_user_status(message.chat.id, 'start')
+            id_process = get_user_ip(message.chat.id)
+            ip_address = get_process(id_process)[1]
+            timers = message.text.split(" ")
+            timer = 10
+            if timers:
+                if timers[-1]:
+                    timer = int(timers[-1])
+                if len(timers) >= 2 and timers[-2]:
+                    timer = int(timers[-2]) * 60 + timer
+                if len(timers) >= 3 and timers[-3]:
+                    timer = int(timers[-3]) * 3600 + timer
+            if timer < 10: timer = 10
+            if timer > 0:
+                set_timer_process(id_process, new_time=timer)
+                await bot.send_message(chat_id=user_id, text=process_info(id_process),
+                                       reply_markup=process_info_keyboard(
+                                           get_subscription_status(ip_address, user_id, id_process)))
+            else:
+                await bot.send_message(chat_id=user_id, text="Ошибка при изменение времени")
+                await bot.send_message(chat_id=user_id, text=process_info(id_process),
+                                       reply_markup=process_info_keyboard(
+                                           get_subscription_status(ip_address, user_id, id_process)))
 
 
 @dp.callback_query_handler(lambda c: c.data in ['prev', 'next'])
@@ -213,14 +241,19 @@ async def vm_info(callback_query: CallbackQuery):
     ip_address = callback_query.message.text.split('ip:')[1].split('\n')[0]
     set_user_ip(user_id, ip_address)
     id_process = callback_query.message.text.split(f'{number}. ID: ')[1].split(' ')[0]
-    subscription(id_server=ip_address, id_user=user_id, process_file=id_process)
-    await bot.edit_message_text(chat_id=user_id, message_id=callback_query.message.message_id,
-                                text=sub_lst_text(get_server_processes_by_ip(ip_address), user_id,
-                                                  type_text='process_file',
-                                                  ip_address=ip_address))
-    await bot.edit_message_reply_markup(chat_id=user_id, message_id=callback_query.message.message_id,
-                                        reply_markup=sub_lst_kb(get_server_processes_by_ip(ip_address), user_id,
-                                                                'process_file'))
+    if get_user_role(user_id) == "admin":
+        await bot.send_message(chat_id=user_id, text=process_info(id_process),
+                               reply_markup=process_info_keyboard(
+                                   get_subscription_status(ip_address, user_id, id_process)))
+    else:
+        subscription(id_server=ip_address, id_user=user_id, process_file=id_process)
+        await bot.edit_message_text(chat_id=user_id, message_id=callback_query.message.message_id,
+                                    text=sub_lst_text(get_server_processes_by_ip(ip_address), user_id,
+                                                      type_text='process_file',
+                                                      ip_address=ip_address))
+        await bot.edit_message_reply_markup(chat_id=user_id, message_id=callback_query.message.message_id,
+                                            reply_markup=sub_lst_kb(get_server_processes_by_ip(ip_address), user_id,
+                                                                    'process_file'))
     await callback_query.answer()
 
 
@@ -298,8 +331,49 @@ async def process_file(callback_query: CallbackQuery):
         user_id = callback_query.message.chat.id
         set_user_status(user_id, 'process_file')
         set_user_ip(user_id, ip_address)
-        await bot.edit_message_text(chat_id=user_id,message_id=callback_query.message.message_id,
-                               text="Напишите процессы/файлы которые хотите добавить. Для файлов полный путь с именем файла, а для процессов полное имя\nНапример:\nC:/Users/admin/Desktop/log.log\nMsMpEng.exe")
+        await bot.edit_message_text(chat_id=user_id, message_id=callback_query.message.message_id,
+                                    text="Напишите процессы/файлы которые хотите добавить. Для файлов полный путь с именем файла, а для процессов полное имя\nНапример:\nC:/Users/admin/Desktop/log.log\nMsMpEng.exe")
+    await callback_query.answer()
+
+
+
+@dp.callback_query_handler(lambda c: c.data in ['process_delete'])
+async def process_delete(callback_query: CallbackQuery):
+    id_process = callback_query.message.text.split(f'ID: ')[1].split('\n')[0]
+    delete_process(id_process)
+    await callback_query.answer("Процесс удален!")
+    ip_address = callback_query.message.text.split('ip: ')[1].split('\n')[0]
+    user_id = callback_query.message.chat.id
+    await bot.send_message(chat_id=user_id,
+                           text=sub_lst_text(get_server_processes_by_ip(ip_address), user_id, type_text='process_file',
+                                             ip_address=ip_address),
+                           reply_markup=sub_lst_kb(get_server_processes_by_ip(ip_address), user_id, 'process_file'))
+    await bot.delete_message(chat_id=user_id, message_id=callback_query.message.message_id)
+    await callback_query.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data in ['process_sub'])
+async def process_sub(callback_query: CallbackQuery):
+    ip_address = callback_query.message.text.split("ip: ")[1].split('\n')[0]
+    user_id = callback_query.message.chat.id
+    id_process = callback_query.message.text.split(f'ID: ')[1].split('\n')[0]
+    subscription(id_server=ip_address, id_user=user_id, process_file=id_process)
+    await bot.edit_message_text(chat_id=user_id, message_id=callback_query.message.message_id,
+                                text=process_info(id_process))
+    await bot.edit_message_reply_markup(chat_id=user_id, message_id=callback_query.message.message_id,
+                                        reply_markup=process_info_keyboard(
+                                            get_subscription_status(ip_address, user_id, id_process)))
+    await callback_query.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data in ['process_change_time'])
+async def process_timer(callback_query: CallbackQuery):
+    id_process = callback_query.message.text.split(f'ID: ')[1].split('\n')[0]
+    user_id = callback_query.message.chat.id
+    set_user_ip(user_id, id_process)
+    set_user_status(user_id, "set_timer")
+    await bot.send_message(chat_id=user_id,
+                           text="Напишите с каким интервалом(в формате HH MM SS, через пробел) производить проверку этого процесса.")
     await callback_query.answer()
 
 
@@ -330,7 +404,7 @@ async def vm_info(callback_query: CallbackQuery):
     elif callback_query.data == 'edit_accept':
         from monitoring import server_status
         await server_status(ip_address)
-        await bot.edit_message_text(parse_mode=types.ParseMode.HTML,chat_id=callback_query.message.chat.id,
+        await bot.edit_message_text(parse_mode=types.ParseMode.HTML, chat_id=callback_query.message.chat.id,
                                     message_id=callback_query.message.message_id,
                                     text=vm_info_func(user_id, ip_address))
         await bot.edit_message_reply_markup(chat_id=callback_query.message.chat.id,

@@ -1,5 +1,5 @@
 from sqlalchemy import MetaData, Table, Column, Integer, String, ForeignKey, create_engine, text, insert, select, cast, \
-    update
+    update, delete
 from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import insert
 
@@ -17,7 +17,6 @@ user_table = Table(
     Column("role", String)
 )
 
-# ////
 
 notification_table = Table(
     "notification",
@@ -29,8 +28,6 @@ notification_table = Table(
     Column("ip_server", ForeignKey("server.id"), nullable=False)
 )
 
-# ////
-
 server_table = Table(
     "server",
     metadata_obj,
@@ -41,12 +38,9 @@ server_table = Table(
     Column("password", String),
     Column("status", String),
     Column("hostname", String)
-    # Column("remote_pathes", String),
-    #
-    # Column("remote_process", String)
+
 )
 
-# ////
 
 subscription_table = Table(
     "subscription",
@@ -56,7 +50,6 @@ subscription_table = Table(
     Column("id_user", ForeignKey("user_account.id"), nullable=False),
     Column("process_file", String),
     Column("status_sub", String)
-    #
 )
 
 server_process_files_table = Table(
@@ -67,8 +60,41 @@ server_process_files_table = Table(
     Column("process_file", String),
     Column("type", String),
     Column("status", String),
-    Column("name", String)
+    Column("description", String),
+    Column("timer", Integer),
+    Column("last_check", Integer),
+
 )
+
+
+def delete_process(process_id):
+    stmt = (
+        delete(server_process_files_table).where(server_process_files_table.c.id == process_id)
+    )
+    stmt2 = (
+        delete(subscription_table).where(subscription_table.c.process_file == process_id)
+    )
+
+    with engine.connect() as conn:
+        conn.execute(stmt)
+        conn.execute(stmt2)
+        conn.commit()
+
+    return 1
+
+
+def set_process_last_check(id, time):
+    stmt = (
+        update(server_process_files_table)
+        .where(
+            (server_process_files_table.c.id == id)
+        )
+        .values(last_check=time)
+    )
+    with engine.connect() as conn:
+        result = conn.execute(stmt)
+        conn.commit()
+    return result
 
 
 def set_process_status(ip_address, process_file, status):
@@ -96,7 +122,9 @@ def add_server_process(ip_address, process):
             ip_address=ip_address,
             process_file=process,
             type=type,
-            status="None"
+            status="None",
+            timer=180,
+            last_check=0
         )
         result = conn.execute(stmt)
         conn.commit()
@@ -122,7 +150,7 @@ def get_server_processes_by_ip(ip_address):
         rows = result.fetchall()
         lst = []
         for row in rows:
-            lst.append((row.id, row.ip_address, row.process_file, row.type, row.status, row.name))
+            lst.append((row.id, row.ip_address, row.process_file, row.type, row.status, row.description, row.timer, row.last_check))
         return lst
 
 
@@ -190,11 +218,11 @@ def get_all_notify(ip_address):
             (notification_table.c.ip_server == ip_address)
         )
         result = conn.execute(stmt)
-        rows = result.fetchall()
+        rows = result.fetchall().__reversed__()
         lst = []
         for row in rows:
             lst.append((row.id, row.noti_text, row.data_path, row.date, row.ip_server))
-        print(lst)
+
         return lst
 
 
@@ -242,6 +270,14 @@ def create_server_first_time(ip_address):
         stmt = insert(server_table).values(ip_address=ip_address)
         stmt = stmt.on_conflict_do_nothing(index_elements=[server_table.c.ip_address])
         result = conn.execute(stmt)
+        conn.commit()
+
+
+def set_timer_process(process_id, new_time):
+    with engine.connect() as conn:
+        stmt = server_process_files_table.update().where(server_process_files_table.c.id == process_id).values(
+            timer=new_time)
+        conn.execute(stmt)
         conn.commit()
 
 
@@ -335,7 +371,7 @@ def add_user_account(id_tg, name, status, lst_page):
     return result
 
 
-def create_base(action):  # 'drop' чтобы удалить, 'create' чтобы создать
+def create_base(action):  # 'drop' - del , 'create'
     if action == 'create':
         metadata_obj.create_all(engine)
     if action == 'drop':

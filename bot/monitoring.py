@@ -2,11 +2,12 @@ import paramiko
 import time
 from db_main import get_server_record_by_ip, get_subscribtion_table_by_ip, get_all_ip_addresses, \
     set_server_status, get_ip_addresses_with_status, set_hostname_server, get_server_processes_by_ip, get_process, \
-    set_process_status
+    set_process_status, set_process_last_check
 from datetime import datetime
 import asyncio
 from aiogram import exceptions
 from rocketry import Rocketry
+
 
 def destroy_all_file():
     import os
@@ -20,6 +21,7 @@ def destroy_all_file():
                 print(f"Удален файл: {file_path}")
     except Exception as e:
         print(f"Произошла ошибка: {str(e)}")
+
 
 destroy_all_file()
 app = Rocketry(execution="async")
@@ -84,8 +86,13 @@ async def server_status(ip_address):
         # print(f'Произошла ошибка: {e}')
     finally:
         ssh.close()
+        from bot import send_notify
+        if prev_status != 'success' and status == 'success':
+            chat_id_lst = [item[2] for item in get_subscribtion_table_by_ip(ip_address) if
+                           item[3] == None and item[4] == 'sub']
+            await send_notify(chat_id_lst=chat_id_lst, ip_address=ip_address,
+                              text=f'{ip_address}\nМашина включилась')
         if prev_status == 'success' and status != 'success':
-            from bot import send_notify
             chat_id_lst = [item[2] for item in get_subscribtion_table_by_ip(ip_address) if
                            item[3] == None and item[4] == 'sub']
             await send_notify(chat_id_lst=chat_id_lst, ip_address=ip_address,
@@ -96,7 +103,7 @@ async def main_async(ip_address):
     from bot import send_notify
     ssh_client = paramiko.SSHClient()
     ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
+    current_time = datetime.now().strftime("%M")
     try:
         vm = get_server_record_by_ip(ip_address)
         print(vm)
@@ -104,38 +111,47 @@ async def main_async(ip_address):
         username = vm[3]
         password = vm[4]
         ssh_client.connect(ip_address, port, username, password)
-
         remote_process_file = get_server_processes_by_ip(ip_address)
-
         current_datetime = datetime.now()
+        total_seconds = current_datetime.timestamp()
         formatted_datetime = current_datetime.strftime("%y.%m.%d.%H.%M.%S")
         print(remote_process_file)
+        print(total_seconds)
+
         for i, remote_pf in enumerate(remote_process_file):
-            if remote_pf[3] == 'file':
-                chat_id_lst = [item[2] for item in get_subscribtion_table_by_ip(ip_address) if
-                               item[3] == str(remote_pf[0]) and item[4] == 'sub']
-                try:
-                    sftp = ssh_client.open_sftp()
-                    local_file_path = f'logs/file{i}_{ip_address}_{formatted_datetime}.log'
-                    sftp.get(remote_pf[2], local_file_path)
-                    await send_notify(chat_id_lst=chat_id_lst, ip_address=ip_address,
-                                      text=f'Файл\n{ip_address}\n{remote_pf[2]}',
-                                      log_file=local_file_path)
-                    sftp.close()
-                except Exception as e:
-                    await send_notify(chat_id_lst=chat_id_lst, ip_address=ip_address,
-                                      text=f'{ip_address}\n\n{remote_pf[2]}\n\n{e}')
-            elif remote_pf[3] == 'process':
-                chat_id_lst = [item[2] for item in get_subscribtion_table_by_ip(ip_address) if
-                               item[3] == str(remote_pf[0]) and item[4] == 'sub']
-                tasklist = await cmd_command(ip_address, f'tasklist | findstr /i {remote_pf[2]}')
-                if tasklist != None:
-                    set_process_status(ip_address, remote_pf[2],'success')
-                else:
-                    if remote_pf[4] == 'success':
-                        await send_notify(chat_id_lst, ip_address,
-                                          text=f'ip:{ip_address}, процесс {remote_pf[2]} отключен!')
-                    set_process_status(ip_address,remote_pf[2],'failure')
+            print(int(remote_pf[6]))
+            print(int(remote_pf[7]))
+            if total_seconds - int(remote_pf[6]) > int(remote_pf[7]):
+                set_process_last_check(remote_pf[0], total_seconds)
+                if remote_pf[3] == 'file':
+                    chat_id_lst = [item[2] for item in get_subscribtion_table_by_ip(ip_address) if
+                                   item[3] == str(remote_pf[0]) and item[4] == 'sub']
+                    try:
+                        sftp = ssh_client.open_sftp()
+                        local_file_path = f'logs/file{i}_{ip_address}_{formatted_datetime}.log'
+                        sftp.get(remote_pf[2], local_file_path)
+                        await send_notify(chat_id_lst=chat_id_lst, ip_address=ip_address,
+                                          text=f'Файл\n{ip_address}\n{remote_pf[2]}',
+                                          log_file=local_file_path)
+                        sftp.close()
+                    except Exception as e:
+                        await send_notify(chat_id_lst=chat_id_lst, ip_address=ip_address,
+                                          text=f'{ip_address}\n\n{remote_pf[2]}\n\n{e}')
+                elif remote_pf[3] == 'process':
+                    chat_id_lst = [item[2] for item in get_subscribtion_table_by_ip(ip_address) if
+                                   item[3] == str(remote_pf[0]) and item[4] == 'sub']
+                    tasklist = await cmd_command(ip_address, f'tasklist | findstr /i {remote_pf[2]}')
+                    if tasklist != None:
+                        set_process_status(ip_address, remote_pf[2], 'success')
+                        if remote_pf[4] != 'success':
+                            await send_notify(chat_id_lst, ip_address,
+                                              text=f'ip:{ip_address}, процесс {remote_pf[2]} включился!')
+                        set_process_status(ip_address, remote_pf[2], 'success')
+                    else:
+                        if remote_pf[4] == 'success':
+                            await send_notify(chat_id_lst, ip_address,
+                                              text=f'ip:{ip_address}, процесс {remote_pf[2]} отключен!')
+                        set_process_status(ip_address, remote_pf[2], 'failure')
 
 
     except Exception as e:
@@ -147,8 +163,8 @@ async def main_async(ip_address):
         ssh_client.close()
 
 
-@app.task('every 1 minute')
-async def do_minutely():
+@app.task('every 10 seconds')
+async def do_secondly():
     ip_addresses = get_all_ip_addresses()
     for address in ip_addresses:
         await server_status(address)

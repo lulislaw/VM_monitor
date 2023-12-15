@@ -17,6 +17,7 @@ def vm_add_kb():
     port_bt = InlineKeyboardButton(text='Изменить port', callback_data="edit_port")
     username_bt = InlineKeyboardButton(text='Изменить учетную запись', callback_data="edit_username")
     password_bt = InlineKeyboardButton(text='Изменить пароль', callback_data="edit_password")
+
     accept_vm_add_bt = InlineKeyboardButton(text='Подтвердить', callback_data="edit_accept")
 
     return InlineKeyboardMarkup(row_width=2).add(ip_bt, port_bt, username_bt, password_bt,
@@ -40,10 +41,6 @@ def sub_lst_kb(lst: list, user_id, type_kb='vm'):
     if end_index < len(lst):
         markup.insert(InlineKeyboardButton("Далее", callback_data='next'))
     if type_kb == "process_file":
-        # !
-        markup.insert(InlineKeyboardButton("Подписаться на все", callback_data='sub_all_process'))
-        markup.insert(InlineKeyboardButton("Отписаться от всех", callback_data='unsub_all_process'))
-        markup.insert(InlineKeyboardButton("Назад", callback_data='edit_accept'))
         if get_user_role(user_id) == 'admin':
             markup.insert(InlineKeyboardButton("Добавить", callback_data='add_process'))
     return markup
@@ -62,3 +59,10 @@ def vm_info_kb(user_id, text_sub_bt):
                                                      vm_notif,
                                                      vm_edit_data)
     return InlineKeyboardMarkup(row_width=2).add(vm_process_files, vm_sub_unsub, vm_status, vm_notif)
+
+
+def process_info_keyboard(sub_bt):
+    process_sub_unsub = InlineKeyboardButton(text=sub_bt,callback_data="process_sub")
+    process_delete = InlineKeyboardButton(text="Удалить", callback_data="process_delete")
+    process_timer = InlineKeyboardButton(text="Изменить время проверки", callback_data="process_change_time")
+    return InlineKeyboardMarkup(row_width=2).add(process_sub_unsub,process_delete,process_timer)
