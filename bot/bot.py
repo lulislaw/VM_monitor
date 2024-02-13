@@ -137,8 +137,7 @@ async def action(message: types.Message):
         elif get_user_status(message.chat.id) == 'process_file':
             set_user_status(message.chat.id, 'start')
             ip_address = get_user_ip(message.chat.id)
-            if '.' in message.text:
-                add_server_process(ip_address, message.text)
+            add_server_process(ip_address, message.text)
             await bot.send_message(chat_id=user_id,
                                    text=sub_lst_text(get_server_processes_by_ip(ip_address), user_id,
                                                      type_text='process_file',
@@ -332,9 +331,8 @@ async def process_file(callback_query: CallbackQuery):
         set_user_status(user_id, 'process_file')
         set_user_ip(user_id, ip_address)
         await bot.edit_message_text(chat_id=user_id, message_id=callback_query.message.message_id,
-                                    text="Напишите процессы/файлы которые хотите добавить. Для файлов полный путь с именем файла, а для процессов полное имя\nНапример:\nC:/Users/admin/Desktop/log.log\nMsMpEng.exe")
+                                    text="Напишите название процесса например 'firefox', важно учитывать регистр")
     await callback_query.answer()
-
 
 
 @dp.callback_query_handler(lambda c: c.data in ['process_delete'])

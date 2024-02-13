@@ -17,7 +17,6 @@ user_table = Table(
     Column("role", String)
 )
 
-
 notification_table = Table(
     "notification",
     metadata_obj,
@@ -37,10 +36,11 @@ server_table = Table(
     Column("username", String),
     Column("password", String),
     Column("status", String),
-    Column("hostname", String)
+    Column("hostname", String),
+    Column("osystem", String)
+
 
 )
-
 
 subscription_table = Table(
     "subscription",
@@ -62,10 +62,34 @@ server_process_files_table = Table(
     Column("status", String),
     Column("description", String),
     Column("timer", Integer),
-    Column("last_check", Integer),
+    Column("last_check", Integer)
+
 
 )
 
+# with engine.connect() as conn:
+#     stmt = subscription_table.select().where(
+#         (subscription_table.c.id_user == id_user) &
+#         (subscription_table.c.status_sub == "sub") &
+#         (subscription_table.c.process_file == None)
+#     ).with_only_columns(subscription_table.c.id_server)
+
+def get_latest_note(ip_address, liketext):
+    stmt = (
+        notification_table
+        .select()
+        .where(
+            (notification_table.c.ip_server == ip_address) &
+            (notification_table.c.noti_text.like(f'%{liketext}%'))
+        )
+        .order_by(notification_table.c.date.desc())
+        .limit(1)
+        .with_only_columns(notification_table.c.date)
+    )
+
+    with engine.connect() as conn:
+        result = conn.execute(stmt)
+        return result.scalar()
 
 def delete_process(process_id):
     stmt = (
@@ -150,7 +174,8 @@ def get_server_processes_by_ip(ip_address):
         rows = result.fetchall()
         lst = []
         for row in rows:
-            lst.append((row.id, row.ip_address, row.process_file, row.type, row.status, row.description, row.timer, row.last_check))
+            lst.append((row.id, row.ip_address, row.process_file, row.type, row.status, row.description, row.timer,
+                        row.last_check))
         return lst
 
 
@@ -284,6 +309,12 @@ def set_timer_process(process_id, new_time):
 def set_port_server(ip_address, new_port):
     with engine.connect() as conn:
         stmt = server_table.update().where(server_table.c.ip_address == ip_address).values(port=new_port)
+        result = conn.execute(stmt)
+        conn.commit()
+
+def set_os_server(ip_address, new_os):
+    with engine.connect() as conn:
+        stmt = server_table.update().where(server_table.c.ip_address == ip_address).values(osystem=new_os)
         result = conn.execute(stmt)
         conn.commit()
 

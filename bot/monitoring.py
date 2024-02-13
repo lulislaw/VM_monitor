@@ -2,11 +2,16 @@ import paramiko
 import time
 from db_main import get_server_record_by_ip, get_subscribtion_table_by_ip, get_all_ip_addresses, \
     set_server_status, get_ip_addresses_with_status, set_hostname_server, get_server_processes_by_ip, get_process, \
-    set_process_status, set_process_last_check
+    set_process_status, set_process_last_check, set_os_server, get_latest_note
 from datetime import datetime
 import asyncio
 from aiogram import exceptions
 from rocketry import Rocketry
+
+commands = {
+    'linux': 'pgrep',
+    'windows': 'tasklist | findstr /i'
+}
 
 
 def destroy_all_file():
@@ -33,6 +38,8 @@ async def cmd_command(ip_address, command) -> str:
     username = vm[3]
     password = vm[4]
     try:
+        if vm[7] == 'linux':
+            command = f'echo "{password}" | sudo -S {command}'
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(ip_address, port, username, password)
@@ -51,6 +58,27 @@ async def cmd_command(ip_address, command) -> str:
         return f'Произошла ошибка: {e}'
 
 
+async def get_cpu(vm):
+    limit = 0.6
+    cooldown = 120
+    indextimer = 0
+    current_time = datetime.now()
+    textaboutload = 'Нагрузка на процессов за последние 1 минут свыше 90%!!!'
+    if (vm[7] == 'windows'):
+        print('win')
+    elif (vm[7] == 'linux'):
+        loads = (await cmd_command(vm[1], 'uptime')).split('load average: ')[1].split(', ')
+        if float(loads[indextimer].replace(',', '.')) >= limit:
+            note = get_latest_note(vm[1], textaboutload)
+            if not note:
+                return textaboutload
+            time_object = datetime.strptime(note, "%Y-%m-%d %H:%M:%S.%f")
+            time_difference = current_time - time_object
+            if time_difference.total_seconds() > cooldown:
+                return textaboutload
+    return 0
+
+
 async def server_status(ip_address):
     vm = get_server_record_by_ip(ip_address)
     port = vm[2]
@@ -58,7 +86,7 @@ async def server_status(ip_address):
     password = vm[4]
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    prev_status = get_server_record_by_ip(ip_address)[5]
+    prev_status = vm[5]
     status = prev_status
     try:
         ssh.connect(ip_address, port, username, password)
@@ -66,37 +94,46 @@ async def server_status(ip_address):
         set_server_status(ip_address, status)
         if vm[6] == None:
             set_hostname_server(ip_address, await cmd_command(ip_address, 'hostname'))
+        if vm[7] == None:
+            os = await cmd_command(ip_address, 'ver')
+            print('asdfasdfasdfasdf')
+            print(os)
+            if 'windows' in os.lower():
+                set_os_server(ip_address, 'windows')
+                print('windows')
+            os = await cmd_command(ip_address, 'uname -a')
+            if 'linux' in os.lower():
+                set_os_server(ip_address, 'linux')
+                print('linux')
 
-        # print('SSH-подключение успешно установлено')
+
+
     except paramiko.AuthenticationException:
         status = 'auth_error'
         set_server_status(ip_address, status)
-        # print('Ошибка аутентификации. Проверьте имя пользователя и пароль.')
     except paramiko.SSHException as e:
         status = 'ssh_error'
         set_server_status(ip_address, status)
-        # print(f'Ошибка SSH: {e}')
     except paramiko.ssh_exception.NoValidConnectionsError:
         status = 'bad_connection'
         set_server_status(ip_address, status)
-        # print('Не удается установить соединение. Проверьте хост или порт.')
     except Exception as e:
         status = 'another_error'
         set_server_status(ip_address, status)
-        # print(f'Произошла ошибка: {e}')
     finally:
         ssh.close()
         from bot import send_notify
+        chat_id_lst = [item[2] for item in get_subscribtion_table_by_ip(ip_address) if
+                       item[3] == None and item[4] == 'sub']
         if prev_status != 'success' and status == 'success':
-            chat_id_lst = [item[2] for item in get_subscribtion_table_by_ip(ip_address) if
-                           item[3] == None and item[4] == 'sub']
             await send_notify(chat_id_lst=chat_id_lst, ip_address=ip_address,
                               text=f'{ip_address}\nМашина включилась')
         if prev_status == 'success' and status != 'success':
-            chat_id_lst = [item[2] for item in get_subscribtion_table_by_ip(ip_address) if
-                           item[3] == None and item[4] == 'sub']
             await send_notify(chat_id_lst=chat_id_lst, ip_address=ip_address,
                               text=f'{ip_address}\nМашина отключилась')
+        cpuload = await get_cpu(vm)
+        if cpuload:
+            await send_notify(chat_id_lst, ip_address, text=f'{ip_address}\n{cpuload}')
 
 
 async def main_async(ip_address):
@@ -110,6 +147,8 @@ async def main_async(ip_address):
         port = vm[2]
         username = vm[3]
         password = vm[4]
+        os = vm[7]
+        print(os)
         ssh_client.connect(ip_address, port, username, password)
         remote_process_file = get_server_processes_by_ip(ip_address)
         current_datetime = datetime.now()
@@ -138,9 +177,10 @@ async def main_async(ip_address):
                         await send_notify(chat_id_lst=chat_id_lst, ip_address=ip_address,
                                           text=f'{ip_address}\n\n{remote_pf[2]}\n\n{e}')
                 elif remote_pf[3] == 'process':
+
                     chat_id_lst = [item[2] for item in get_subscribtion_table_by_ip(ip_address) if
                                    item[3] == str(remote_pf[0]) and item[4] == 'sub']
-                    tasklist = await cmd_command(ip_address, f'tasklist | findstr /i {remote_pf[2]}')
+                    tasklist = await cmd_command(ip_address, f'{commands[os]} {remote_pf[2]}')
                     if tasklist != None:
                         set_process_status(ip_address, remote_pf[2], 'success')
                         if remote_pf[4] != 'success':

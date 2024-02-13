@@ -53,7 +53,7 @@ def vm_info_func(user_id, ip_address):
     status = 'Запущена' if get_server_record_by_ip(ip_address)[5] == 'success' else 'Выключена'
     files = '0123'
     if get_user_role(user_id) == 'admin':
-        return f"{vm[6]}\nip:{vm[1]}\nport:{vm[2]}\nusername:{vm[3]}\npassword:<span class='tg-spoiler'>{vm[4]}</span>\nСтатус: {status}"
+        return f"{vm[6]}\n{vm[7]}\nip:{vm[1]}\nport:{vm[2]}\nusername:{vm[3]}\npassword:<span class='tg-spoiler'>{vm[4]}</span>\nСтатус: {status}"
     return f"{vm[6]}\nip:{vm[1]}\nport:{vm[2]}\nСтатус: {status}"
 
 
