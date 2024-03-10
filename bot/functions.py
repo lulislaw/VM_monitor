@@ -1,10 +1,18 @@
 from db_main import get_user_page, get_server_record_by_ip, get_user_role, get_subscribtion_table_by_ip, get_process, \
     subscription, get_subscription_status
 
+
+def service_message(text, vm, status):
+    status = status.split('\n\n')[0]
+    finish_text = f'ip: {vm[1]}\nos: {vm[7]}\nservice: {text}\n\nstatus:\n{status}'
+    return finish_text
+
+
 def seconds_to_hms(seconds):
     hours, remainder = divmod(seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     return "{:02}:{:02}:{:02}".format(int(hours), int(minutes), int(seconds))
+
 
 def sub_lst_text(lst: list, user_id, type_text='vm', ip_address=''):
     if not lst:
@@ -43,7 +51,7 @@ def sub_lst_text(lst: list, user_id, type_text='vm', ip_address=''):
             if item[3] == 'process':
                 status = 'Запущен' if item[4] == 'success' else 'Выключен'
                 finish_text = f'{finish_text}\t | {status}'
-            finish_text = f'{finish_text}\t | {get_subscription_status(id_server=ip_address,id_user=user_id,process_file=item[0])}'
+            finish_text = f'{finish_text}\t | {get_subscription_status(id_server=ip_address, id_user=user_id, process_file=item[0])}'
             finish_text = f'{finish_text} \n'
     return finish_text
 

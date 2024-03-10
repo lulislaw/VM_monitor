@@ -1,10 +1,12 @@
+import time
+
 from aiogram import Bot, Dispatcher, types
 from aiogram import executor
 from aiogram.types import ChatActions
 from aiogram.types import CallbackQuery
-from keyboards import start_kb, vm_add_kb, sub_lst_kb, vm_info_kb, process_info_keyboard
+from keyboards import start_kb, vm_add_kb, sub_lst_kb, vm_info_kb, process_info_keyboard, service_keyboard
 from settings.config import Config
-from functions import sub_lst_text, vm_info_func, process_info
+from functions import sub_lst_text, vm_info_func, process_info, service_message
 from db_main import create_base, add_user_account, set_user_page, get_user_page, get_user_status, set_user_status, \
     create_server_first_time, get_user_ip, set_user_ip, set_port_server, set_password_server, set_username_server, \
     get_all_ip_addresses, subscription, get_subscription_status, get_subscribed_servers, get_subscribtion_table_by_ip, \
@@ -124,7 +126,13 @@ async def action(message: types.Message):
             unique_array = list(set(chat_id_lst))
             text_notif = f'Уведомление для ВМ({ip_address})\n{message.text}\n\n@{message.from_user.username}'
             await send_notify(chat_id_lst=unique_array, ip_address=ip_address, text=text_notif)
-
+        elif get_user_status(message.chat.id) == 'set_service':
+            from monitoring import service_cmd
+            set_user_status(message.chat.id, 'start')
+            vm = get_server_record_by_ip(get_user_ip(message.chat.id))
+            status = await service_cmd(vm, 'status', message.text)
+            await bot.send_message(chat_id=message.chat.id,
+                                   text=service_message(message.text, vm, status), reply_markup=service_keyboard())
         elif get_user_status(message.chat.id) == 'cmd_command':
             if message.text == 'end':
                 set_user_status(message.chat.id, 'start')
@@ -230,6 +238,40 @@ async def vm_info(callback_query: CallbackQuery):
     set_user_ip(user_id, ip_address)
     await bot.send_message(parse_mode=types.ParseMode.HTML, text=vm_info_func(user_id, ip_address), chat_id=user_id,
                            reply_markup=vm_info_kb(user_id, get_subscription_status(ip_address, user_id)))
+    await callback_query.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith('ser_'))
+async def service_edit(callback_query: CallbackQuery):
+    from monitoring import service_cmd
+    service_name = callback_query.message.text.split('service: ')[1].split('\n')[0]
+    print(callback_query.data)
+    vm = get_server_record_by_ip(get_user_ip(callback_query.message.chat.id))
+    user_id = callback_query.message.chat.id
+    ip_address = vm[1]
+    data = callback_query.data
+    if 'Service could not be found.' not in callback_query.message.text:
+        if data == 'ser_on':
+            await service_cmd(vm, 'start', service_name)
+            status = await service_cmd(vm, 'status', service_name)
+            await bot.edit_message_text(chat_id=user_id, message_id=callback_query.message.message_id,
+                                        text=service_message(service_name, vm, status))
+            await bot.edit_message_reply_markup(chat_id=user_id, message_id=callback_query.message.message_id,
+                                                reply_markup=service_keyboard())
+        elif data == 'ser_off':
+            await service_cmd(vm, 'stop', service_name)
+            status = await service_cmd(vm, 'status', service_name)
+            await bot.edit_message_text(chat_id=user_id, message_id=callback_query.message.message_id,
+                                        text=service_message(service_name, vm, status))
+            await bot.edit_message_reply_markup(chat_id=user_id, message_id=callback_query.message.message_id,
+                                                reply_markup=service_keyboard())
+    if data == 'ser_change':
+        await bot.send_message(chat_id=user_id, text='Введите имя службы в чат')
+        set_user_status(callback_query.message.chat.id, 'set_service')
+    elif data == 'ser_back':
+        await bot.send_message(parse_mode=types.ParseMode.HTML, text=vm_info_func(user_id, ip_address), chat_id=user_id,
+                               reply_markup=vm_info_kb(user_id, get_subscription_status(ip_address, user_id)))
+        await bot.delete_message(chat_id=user_id,message_id=callback_query.message.message_id)
     await callback_query.answer()
 
 
@@ -361,6 +403,13 @@ async def process_sub(callback_query: CallbackQuery):
     await bot.edit_message_reply_markup(chat_id=user_id, message_id=callback_query.message.message_id,
                                         reply_markup=process_info_keyboard(
                                             get_subscription_status(ip_address, user_id, id_process)))
+    await callback_query.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data in ['service'])
+async def service(callback_query: CallbackQuery):
+    await bot.send_message(chat_id=callback_query.message.chat.id, text='Введите имя службы в чат')
+    set_user_status(callback_query.message.chat.id, 'set_service')
     await callback_query.answer()
 
 

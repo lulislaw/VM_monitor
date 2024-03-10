@@ -8,11 +8,6 @@ import asyncio
 from aiogram import exceptions
 from rocketry import Rocketry
 
-commands = {
-    'linux': 'pgrep',
-    'windows': 'tasklist | findstr /i'
-}
-
 
 def destroy_all_file():
     import os
@@ -38,8 +33,8 @@ async def cmd_command(ip_address, command) -> str:
     username = vm[3]
     password = vm[4]
     try:
-        if vm[7] == 'linux':
-            command = f'echo "{password}" | sudo -S {command}'
+        # if vm[7] == 'linux':
+        #     command = f'echo "{password}" | sudo -S {command}'
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(ip_address, port, username, password)
@@ -47,6 +42,16 @@ async def cmd_command(ip_address, command) -> str:
         print(command)
         output = stdout.read().decode()
         error = stderr.read().decode()
+        if '[sudo]' in error:
+            ssh.exec_command(password)
+            stdin1, stdout1, stderr1 = ssh.exec_command(command)
+            output1 = stdout1.read().decode()
+            error1 = stderr1.read().decode()
+            if output1:
+                return output1[:2048].strip()
+            if error1:
+                return error[:2048]
+            return 'Команда выполнена без обратного сообщения'
         if output:
             return output[:2048].strip()
         if error:
@@ -58,6 +63,19 @@ async def cmd_command(ip_address, command) -> str:
         return f'Произошла ошибка: {e}'
 
 
+async def service_cmd(vm, action, service_name):
+    commands = {
+        'status': f'echo {vm[4]} | sudo -S systemctl status {service_name}',
+        'start': f'echo {vm[4]} | sudo -S systemctl start {service_name}',
+        'stop': f'echo {vm[4]} | sudo -S systemctl stop {service_name}'
+    }
+    output = await cmd_command(vm[1], commands[action])
+    if action == 'status':
+        if 'could not be found.' in output:
+            return 'Service could not be found.'
+        return output
+    else: return ''
+
 async def get_cpu(vm):
     limit = 0.6
     cooldown = 120
@@ -67,11 +85,11 @@ async def get_cpu(vm):
     if (vm[7] == 'windows'):
         print('win')
     elif (vm[7] == 'linux'):
+        note = get_latest_note(vm[1], textaboutload)
+        if not note:
+            return textaboutload
         loads = (await cmd_command(vm[1], 'uptime')).split('load average: ')[1].split(', ')
         if float(loads[indextimer].replace(',', '.')) >= limit:
-            note = get_latest_note(vm[1], textaboutload)
-            if not note:
-                return textaboutload
             time_object = datetime.strptime(note, "%Y-%m-%d %H:%M:%S.%f")
             time_difference = current_time - time_object
             if time_difference.total_seconds() > cooldown:
@@ -96,8 +114,6 @@ async def server_status(ip_address):
             set_hostname_server(ip_address, await cmd_command(ip_address, 'hostname'))
         if vm[7] == None:
             os = await cmd_command(ip_address, 'ver')
-            print('asdfasdfasdfasdf')
-            print(os)
             if 'windows' in os.lower():
                 set_os_server(ip_address, 'windows')
                 print('windows')
@@ -131,16 +147,16 @@ async def server_status(ip_address):
         if prev_status == 'success' and status != 'success':
             await send_notify(chat_id_lst=chat_id_lst, ip_address=ip_address,
                               text=f'{ip_address}\nМашина отключилась')
-        cpuload = await get_cpu(vm)
-        if cpuload:
-            await send_notify(chat_id_lst, ip_address, text=f'{ip_address}\n{cpuload}')
+        if status == 'success':
+            cpuload = await get_cpu(vm)
+            if cpuload:
+                await send_notify(chat_id_lst, ip_address, text=f'{ip_address}\n{cpuload}')
 
 
 async def main_async(ip_address):
     from bot import send_notify
     ssh_client = paramiko.SSHClient()
     ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    current_time = datetime.now().strftime("%M")
     try:
         vm = get_server_record_by_ip(ip_address)
         print(vm)
@@ -180,18 +196,24 @@ async def main_async(ip_address):
 
                     chat_id_lst = [item[2] for item in get_subscribtion_table_by_ip(ip_address) if
                                    item[3] == str(remote_pf[0]) and item[4] == 'sub']
-                    tasklist = await cmd_command(ip_address, f'{commands[os]} {remote_pf[2]}')
-                    if tasklist != None:
-                        set_process_status(ip_address, remote_pf[2], 'success')
+                    print(f'os: {os}')
+                    if os == 'windows':
+                        tasklist = await cmd_command(ip_address, f'tasklist | findstr /i {remote_pf[2]}.exe')
+                    elif os == 'linux':
+                        tasklist = await cmd_command(ip_address, f'pgrep {remote_pf[2]}')
+                        print(f'commanda otpravlena {tasklist}')
+                    if tasklist:
+                        print(f'True success')
                         if remote_pf[4] != 'success':
                             await send_notify(chat_id_lst, ip_address,
                                               text=f'ip:{ip_address}, процесс {remote_pf[2]} включился!')
-                        set_process_status(ip_address, remote_pf[2], 'success')
+                            set_process_status(ip_address, remote_pf[2], 'success')
                     else:
+                        print(f'FALSE success')
                         if remote_pf[4] == 'success':
                             await send_notify(chat_id_lst, ip_address,
                                               text=f'ip:{ip_address}, процесс {remote_pf[2]} отключен!')
-                        set_process_status(ip_address, remote_pf[2], 'failure')
+                            set_process_status(ip_address, remote_pf[2], 'failure')
 
 
     except Exception as e:

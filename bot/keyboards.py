@@ -1,5 +1,5 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup
-from db_main import get_user_page, get_user_role
+from db_main import get_user_page, get_user_role, get_user_ip, get_server_record_by_ip
 
 
 def start_kb(user_id):
@@ -9,7 +9,7 @@ def start_kb(user_id):
     search_vm_button = KeyboardButton(text='Поиск ВМ')
     if get_user_role(user_id) == 'admin':
         return ReplyKeyboardMarkup(row_width=3).add(pool_vm_button, subs_vm_button, add_vm_button)
-    return ReplyKeyboardMarkup(row_width=3).add(pool_vm_button, subs_vm_button,search_vm_button)
+    return ReplyKeyboardMarkup(row_width=3).add(pool_vm_button, subs_vm_button, search_vm_button)
 
 
 def vm_add_kb():
@@ -35,7 +35,7 @@ def sub_lst_kb(lst: list, user_id, type_kb='vm'):
         current_lst.pop()
         end_index -= 1
     for i, item in enumerate(current_lst):
-        markup.insert(InlineKeyboardButton(str(i+1), callback_data=f'{type_kb}_{str(i+1)}'))
+        markup.insert(InlineKeyboardButton(str(i + 1), callback_data=f'{type_kb}_{str(i + 1)}'))
     if current_page > 0:
         markup.insert(InlineKeyboardButton("Назад", callback_data='prev'))
     if end_index < len(lst):
@@ -54,15 +54,27 @@ def vm_info_kb(user_id, text_sub_bt):
     vm_cmd = InlineKeyboardButton(text='cmd', callback_data="cmd_command")
     vm_process_files = InlineKeyboardButton(text='Процессы/Файлы', callback_data="process_files_vm")
     vm_edit_data = InlineKeyboardButton(text='Изменить', callback_data="edit_vm")
+    vm_service = InlineKeyboardButton(text='Управление службами', callback_data="service")
     if get_user_role(user_id) == 'admin':
-        return InlineKeyboardMarkup(row_width=2).add(vm_process_files, vm_sub_unsub, vm_cmd, vm_send, vm_status,
-                                                     vm_notif,
-                                                     vm_edit_data)
+        if get_server_record_by_ip(get_user_ip(user_id))[7] == 'linux':
+            return InlineKeyboardMarkup(row_width=2).add(vm_process_files, vm_sub_unsub, vm_cmd, vm_send, vm_status,
+                                                         vm_notif, vm_service, vm_edit_data)
+        else:
+            return InlineKeyboardMarkup(row_width=2).add(vm_process_files, vm_sub_unsub, vm_cmd, vm_send, vm_status,
+                                                         vm_notif, vm_edit_data)
     return InlineKeyboardMarkup(row_width=2).add(vm_process_files, vm_sub_unsub, vm_status, vm_notif)
 
 
 def process_info_keyboard(sub_bt):
-    process_sub_unsub = InlineKeyboardButton(text=sub_bt,callback_data="process_sub")
+    process_sub_unsub = InlineKeyboardButton(text=sub_bt, callback_data="process_sub")
     process_delete = InlineKeyboardButton(text="Удалить", callback_data="process_delete")
     process_timer = InlineKeyboardButton(text="Изменить время проверки", callback_data="process_change_time")
-    return InlineKeyboardMarkup(row_width=2).add(process_sub_unsub,process_delete,process_timer)
+    return InlineKeyboardMarkup(row_width=2).add(process_sub_unsub, process_delete, process_timer)
+
+
+def service_keyboard():
+    on_service = InlineKeyboardButton(text="Вкл", callback_data="ser_on")
+    off_service = InlineKeyboardButton(text="Выкл", callback_data="ser_off")
+    edit_service = InlineKeyboardButton(text="Выбрать другую", callback_data="ser_change")
+    back_service = InlineKeyboardButton(text="Назад", callback_data="ser_back")
+    return InlineKeyboardMarkup(row_width=2).add(on_service, off_service, edit_service, back_service)
